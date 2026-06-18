@@ -33,6 +33,13 @@
 - [x] 원격 플레이어 Y(점프) 동기화
 - ⚠️ 1인칭은 포인터락 지원(PC)에서만. 모바일은 조이스틱+3인칭.
 
+## 2026-06-18 마인크래프트화 라운드 2 (분위기·게임필)
+- [x] 낮/밤 사이클(하늘색·태양·앰비언트·안개 변화, 태양 궤도)
+- [x] 효과음(Web Audio 합성, 에셋無): 블록 설치/파괴/점프/발소리. M키 음소거
+- [x] 발광석(glow) 블록 추가 — emissive, 밤에 빛남. 핫바 9칸(1~9키)
+- [x] 블록 파괴 파티클(블록 텍스처 조각 튐 + 중력 + 페이드)
+- [x] 달리기 시 FOV 살짝 넓힘(질주감)
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)

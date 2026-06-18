@@ -58,7 +58,8 @@ window.addEventListener('resize', () => {
 });
 
 // Lights
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xfffff0, 1.0);
 sun.position.set(25, 45, 20); sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -87,6 +88,7 @@ const TEX = {
   glass: pixTex(cx => { cx.clearRect(0,0,16,16); cx.fillStyle='rgba(150,205,235,0.4)'; cx.fillRect(0,0,16,16); cx.strokeStyle='rgba(230,248,255,0.95)'; cx.lineWidth=2; cx.strokeRect(1,1,14,14); }),
   leaves: pixTex(cx => noise(cx, '#3e7a34', ['#356a2c','#4a8c3e','#2e5e26'])),
   sand: pixTex(cx => noise(cx, '#dcd29a', ['#cfc488','#e8dca8'])),
+  glow: pixTex(cx => { noise(cx, '#e8c84a', ['#f0d860','#d4a82e']); cx.fillStyle='#fff0a0'; for(let i=0;i<5;i++)cx.fillRect(irnd(2,14),irnd(2,14),2,2); }),
 };
 const LM = (t, o={}) => new THREE.MeshLambertMaterial({ map: t, ...o });
 // 블록 종류 정의 (핫바)
@@ -99,6 +101,7 @@ const BLOCKS = [
   { id:'log',    name:'나무',   mats:()=>[LM(TEX.logSide),LM(TEX.logSide),LM(TEX.logTop),LM(TEX.logTop),LM(TEX.logSide),LM(TEX.logSide)] },
   { id:'brick',  name:'벽돌',   mats:()=>LM(TEX.brick) },
   { id:'glass',  name:'유리',   mats:()=>LM(TEX.glass,{transparent:true,opacity:0.65}) },
+  { id:'glow',   name:'발광석', mats:()=>new THREE.MeshLambertMaterial({ map:TEX.glow, emissive:0xffcc44, emissiveIntensity:0.9 }) },
 ];
 const blockById = id => BLOCKS.find(b => b.id === id) || BLOCKS[1];
 
@@ -518,8 +521,8 @@ function startSession() {
 
   // Blocks & Draw
   socket.on('init_blocks', b => Object.keys(b).forEach(k => { const [x,y,z] = k.split(',').map(Number); placeBlockMesh(x,y,z, b[k].type); }));
-  socket.on('block_placed', d => placeBlockMesh(d.x, d.y, d.z, d.type));
-  socket.on('block_broken', d => removeBlockMesh(d.x, d.y, d.z));
+  socket.on('block_placed', d => { placeBlockMesh(d.x, d.y, d.z, d.type); sfx('place'); });
+  socket.on('block_broken', d => { spawnBreak(d.x, d.y, d.z); removeBlockMesh(d.x, d.y, d.z); sfx('break'); });
   socket.on('draw', d => drawLine(d.x0, d.y0, d.x1, d.y1, d.color));
 }
 
@@ -624,8 +627,9 @@ document.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === 't' || e.key === 'T') { e.preventDefault(); chatIn?.focus(); }
   if (e.key === ' ') e.preventDefault();                       // 점프 (스크롤 방지)
-  if (e.key >= '1' && e.key <= '8') { const b = BLOCKS[+e.key - 1]; if (b) selectBlock(b.id); }
+  if (e.key >= '1' && e.key <= '9') { const b = BLOCKS[+e.key - 1]; if (b) selectBlock(b.id); }
   if (e.key === 'v' || e.key === 'V') toggleView();
+  if (e.key === 'm' || e.key === 'M') { muted = !muted; toast(muted ? '🔇 효과음 끔' : '🔊 효과음 켬'); }
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -728,11 +732,65 @@ function updateHighlight() {
   } else hl.visible = false;
 }
 
+// ── SOUND FX (Web Audio 합성, 에셋 없음) ──────────────────────────────────
+let muted = false;
+function sfx(type) {
+  if (muted) return;
+  const ctx = audioListener.context; if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+  o.connect(g); g.connect(ctx.destination);
+  if (type === 'place')      { o.type='square';   o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(90,t+0.1);  g.gain.setValueAtTime(0.07,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12); o.start(t); o.stop(t+0.13); }
+  else if (type === 'break') { o.type='sawtooth'; o.frequency.setValueAtTime(200,t); o.frequency.exponentialRampToValueAtTime(60,t+0.18); g.gain.setValueAtTime(0.08,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);  o.start(t); o.stop(t+0.21); }
+  else if (type === 'jump')  { o.type='square';   o.frequency.setValueAtTime(330,t); o.frequency.exponentialRampToValueAtTime(560,t+0.12);g.gain.setValueAtTime(0.05,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.14); o.start(t); o.stop(t+0.15); }
+  else if (type === 'step')  { o.type='sine';     o.frequency.setValueAtTime(85,t);  g.gain.setValueAtTime(0.025,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.08); o.start(t); o.stop(t+0.09); }
+}
+
+// ── BREAK PARTICLES ───────────────────────────────────────────────────────
+const particles = [];
+function spawnBreak(x, y, z) {
+  const mesh = blockMeshes[`${x},${y},${z}`];
+  const m = mesh ? (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) : LM(TEX.dirt);
+  for (let i = 0; i < 7; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), m);
+    p.position.set(x + (Math.random()-0.5), y + 0.5 + (Math.random()-0.5), z + (Math.random()-0.5));
+    p.userData.v = new THREE.Vector3((Math.random()-0.5)*3, Math.random()*4+1.5, (Math.random()-0.5)*3);
+    p.userData.life = 0.6; scene.add(p); particles.push(p);
+  }
+}
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i]; p.userData.life -= dt;
+    if (p.userData.life <= 0) { scene.remove(p); p.geometry.dispose(); particles.splice(i, 1); continue; }
+    p.userData.v.y -= 14 * dt;
+    p.position.addScaledVector(p.userData.v, dt);
+    p.scale.setScalar(Math.max(0.05, p.userData.life / 0.6));
+  }
+}
+
+// ── DAY/NIGHT ─────────────────────────────────────────────────────────────
+let dayT = 1.2;
+const SKY_DAY = new THREE.Color(0x87ceeb), SKY_NIGHT = new THREE.Color(0x0a1530);
+const _sky = new THREE.Color();
+function updateDayNight(dt) {
+  dayT += dt * 0.025;
+  const day = (Math.sin(dayT) + 1) / 2;           // 0 밤 ~ 1 낮
+  _sky.copy(SKY_NIGHT).lerp(SKY_DAY, day);
+  renderer.setClearColor(_sky);
+  scene.fog.color.copy(_sky);
+  sun.intensity = 0.2 + day * 0.95;
+  ambient.intensity = 0.32 + day * 0.4;
+  sun.position.set(Math.cos(dayT) * 45, Math.max(6, Math.sin(dayT) * 45 + 8), 20);
+}
+
 // ── RENDER LOOP ───────────────────────────────────────────────────────────
 let lastT = performance.now(), frameN = 0;
 function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min((now - lastT) / 1000, 0.05); lastT = now; frameN++;
+
+  updateDayNight(dt);
+  updateParticles(dt);
 
   if (player) {
     const sprint = !!keys['Shift'];
@@ -767,10 +825,11 @@ function animate(now) {
 
     // 점프 + 중력 + 블록 위 착지 (쌓고 올라가기)
     const gY = groundHeightAt(player.g.position.x, player.g.position.z);
-    if (onGround && keys[' ']) { vy = 7.2; onGround = false; }
+    if (onGround && keys[' ']) { vy = 7.2; onGround = false; sfx('jump'); }
     vy -= 23 * dt;
     player.g.position.y += vy * dt;
     if (player.g.position.y <= gY) { player.g.position.y = gY; vy = 0; onGround = true; } else onGround = false;
+    if (moving && onGround && frameN % 18 === 0) sfx('step');
 
     if (socket && frameN % 3 === 0) socket.emit('move', { x: player.g.position.x, y: player.g.position.y, z: player.g.position.z, ry: player.g.rotation.y });
 
@@ -785,6 +844,10 @@ function animate(now) {
       camera.position.lerp(player.g.position.clone().add(new THREE.Vector3(0, 9, 12)), 0.1);
       camera.lookAt(player.g.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
     }
+
+    // 달리기 시 시야각(FOV) 살짝 넓힘 (질주감)
+    const targetFov = (moving && sprint) ? 64 : 55;
+    if (Math.abs(camera.fov - targetFov) > 0.1) { camera.fov += (targetFov - camera.fov) * 0.12; camera.updateProjectionMatrix(); }
 
     document.getElementById('cx').textContent = Math.round(player.g.position.x);
     document.getElementById('cy').textContent = Math.round(player.g.position.y);
