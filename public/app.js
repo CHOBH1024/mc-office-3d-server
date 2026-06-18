@@ -152,6 +152,38 @@ for (let i = 0; i < 14; i++) {
   scene.add(cl); clouds.push(cl);
 }
 
+// ── 동물(닭) 로컬 배회 ─────────────────────────────────────────────────────
+const animals = [];
+function buildChicken(x, z) {
+  const g = new THREE.Group();
+  const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const add = (w, h, d, m, px, py, pz) => { const p = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); p.position.set(px, py, pz); g.add(p); return p; };
+  add(0.5, 0.4, 0.7, white, 0, 0.5, 0);
+  add(0.34, 0.34, 0.34, white, 0, 0.82, 0.32);
+  add(0.16, 0.16, 0.2, new THREE.MeshLambertMaterial({ color: 0xff3b3b }), 0, 1.02, 0.34);
+  add(0.12, 0.1, 0.16, new THREE.MeshLambertMaterial({ color: 0xffaa22 }), 0, 0.8, 0.54);
+  const legM = new THREE.MeshLambertMaterial({ color: 0xffaa22 });
+  add(0.08, 0.3, 0.08, legM, -0.12, 0.15, 0); add(0.08, 0.3, 0.08, legM, 0.12, 0.15, 0);
+  g.position.set(x, 0, z); scene.add(g);
+  return { g, hx: x, hz: z, phase: Math.random() * 6, t: Math.random() * 6 };
+}
+for (let i = 0; i < 6; i++) animals.push(buildChicken(-12 + Math.random()*24, -10 + Math.random()*20));
+
+// ── 비(날씨) ───────────────────────────────────────────────────────────────
+let raining = false;
+const rainGroup = new THREE.Group(); rainGroup.visible = false; scene.add(rainGroup);
+const drops = [];
+{
+  const rg = new THREE.BoxGeometry(0.03, 0.55, 0.03), rm = new THREE.MeshBasicMaterial({ color: 0xaaccff, transparent: true, opacity: 0.5 });
+  for (let i = 0; i < 180; i++) { const d = new THREE.Mesh(rg, rm); d.position.set((Math.random()-0.5)*44, Math.random()*22, (Math.random()-0.5)*44); rainGroup.add(d); drops.push(d); }
+}
+function toggleRain() { raining = !raining; rainGroup.visible = raining; toast(raining ? '🌧️ 비가 내립니다' : '☀️ 비가 그쳤습니다'); }
+
+// ── 수중 화면 오버레이 ─────────────────────────────────────────────────────
+const uwOverlay = document.createElement('div');
+uwOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(40,110,200,0.32);pointer-events:none;z-index:8;display:none;';
+document.body.appendChild(uwOverlay);
+
 // ── AVATAR BUILDER ────────────────────────────────────────────────────────
 function hexColor(hex) { return new THREE.MeshLambertMaterial({ color: hex }); }
 
@@ -656,6 +688,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'f' || e.key === 'F') { flying = !flying; vy = 0; toast(flying ? '✈️ 날기 모드 (Space 상승 · Shift 하강)' : '🚶 걷기 모드'); }
   if (e.key === 'n' || e.key === 'N') { dayT += Math.PI; toast('🕒 낮/밤 전환'); }
   if (e.key === 'b' || e.key === 'B') toggleBGM();
+  if (e.key === 'r' || e.key === 'R') toggleRain();
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -837,10 +870,11 @@ function updateDayNight(dt) {
   dayT += dt * 0.025;
   const day = (Math.sin(dayT) + 1) / 2;           // 0 밤 ~ 1 낮
   _sky.copy(SKY_NIGHT).lerp(SKY_DAY, day);
+  if (raining) _sky.lerp(new THREE.Color(0x55606e), 0.5);   // 비 오면 잿빛
   renderer.setClearColor(_sky);
   scene.fog.color.copy(_sky);
-  sun.intensity = 0.2 + day * 0.95;
-  ambient.intensity = 0.32 + day * 0.4;
+  sun.intensity = (0.2 + day * 0.95) * (raining ? 0.55 : 1);
+  ambient.intensity = (0.32 + day * 0.4) * (raining ? 0.75 : 1);
   sun.position.set(Math.cos(dayT) * 45, Math.max(6, Math.sin(dayT) * 45 + 8), 20);
   const frac = (dayT / (Math.PI * 2)) % 1, h = (Math.floor(frac * 24) + 6) % 24, m = Math.floor((frac * 24 * 60) % 60);
   timeEl.textContent = `${day > 0.5 ? '🌞' : '🌙'} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
@@ -855,6 +889,15 @@ function animate(now) {
   updateDayNight(dt);
   updateParticles(dt);
   for (const c of clouds) { c.position.x += dt * 1.2; if (c.position.x > 72) c.position.x = -72; }
+  for (const a of animals) {
+    a.t += dt;
+    const tx = a.hx + Math.sin(a.t * 0.5 + a.phase) * 4, tz = a.hz + Math.cos(a.t * 0.37 + a.phase) * 4;
+    const ddx = tx - a.g.position.x, ddz = tz - a.g.position.z;
+    a.g.position.x += ddx * dt * 0.7; a.g.position.z += ddz * dt * 0.7;
+    if (Math.abs(ddx) + Math.abs(ddz) > 0.01) a.g.rotation.y = Math.atan2(ddx, ddz);
+    a.g.position.y = Math.abs(Math.sin(a.t * 6)) * 0.06;
+  }
+  if (raining && player) { rainGroup.position.set(player.g.position.x, 0, player.g.position.z); for (const d of drops) { d.position.y -= dt * 24; if (d.position.y < 0) d.position.y = 22; } }
 
   if (player) {
     const sprint = !!keys['Shift'];
@@ -934,6 +977,10 @@ function animate(now) {
     if (px > -10 && px < 0 && pz > -14 && pz < -5) room = '회의실 A';
     if (px > 0 && px < 10 && pz > -14 && pz < -5) room = '회의실 B';
     document.getElementById('room-lbl').textContent = room;
+
+    // 수중 화면 효과 (머리가 물 블록 안일 때)
+    const hk = `${Math.round(px)},${Math.floor(player.g.position.y + 1.6)},${Math.round(pz)}`;
+    uwOverlay.style.display = (blockMeshes[hk] && blockMeshes[hk].userData.type === 'water') ? 'block' : 'none';
 
     if (firstPerson) player.tag.style.display = 'none'; else posTag(player.tag, headTop(player));
     if (player.bubble) posTag(player.bubble, headTop(player).add(new THREE.Vector3(0, 0.6, 0)));

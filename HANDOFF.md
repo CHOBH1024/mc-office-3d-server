@@ -52,6 +52,11 @@
 - [x] 점프대(슬라임) 블록 — 떨어지면 튕겨 오름. 핫바 12종(번호키 1~0=10종, 11·12는 클릭)
 - [x] 배경음악 토글(B) — 생성형 앰비언트 패드, 기본 OFF
 
+## 2026-06-18 마인크래프트화 라운드 5 (생명감·날씨)
+- [x] 동물(닭) 6마리 로컬 배회 (클라 전용, 멀티 영향無)
+- [x] 비(날씨) 토글(R) — 빗방울 180개 + 잿빛 하늘/조도 저하
+- [x] 수중 화면 효과 — 머리가 물 블록 안이면 파란 오버레이
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)
