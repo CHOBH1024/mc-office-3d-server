@@ -47,6 +47,11 @@
 - [x] 크리에이티브 날기 모드(F) — Space 상승·Shift 하강, 중력 무시
 - [x] 미니맵에 설치된 블록(갈색 점) 표시
 
+## 2026-06-18 마인크래프트화 라운드 4
+- [x] 낮/밤 시계 표시(🌞/🌙 HH:MM, 토픽바) + 수동 전환(N키)
+- [x] 점프대(슬라임) 블록 — 떨어지면 튕겨 오름. 핫바 12종(번호키 1~0=10종, 11·12는 클릭)
+- [x] 배경음악 토글(B) — 생성형 앰비언트 패드, 기본 OFF
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)

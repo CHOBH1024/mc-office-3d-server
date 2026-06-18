@@ -91,6 +91,7 @@ const TEX = {
   glow: pixTex(cx => { noise(cx, '#e8c84a', ['#f0d860','#d4a82e']); cx.fillStyle='#fff0a0'; for(let i=0;i<5;i++)cx.fillRect(irnd(2,14),irnd(2,14),2,2); }),
   water: pixTex(cx => noise(cx, '#2a6fd4', ['#2360bd','#3a82e6','#1e55a8'])),
   lava: pixTex(cx => { noise(cx, '#e2540f', ['#ff7b1a','#c43a08']); cx.fillStyle='#ffd23a'; for(let i=0;i<4;i++)cx.fillRect(irnd(1,14),irnd(1,14),2,2); }),
+  slime: pixTex(cx => { noise(cx, '#5fbf5a', ['#52ac4e','#74d66e']); cx.strokeStyle='#3e8c3a'; cx.lineWidth=1; cx.strokeRect(2,2,12,12); }),
 };
 const LM = (t, o={}) => new THREE.MeshLambertMaterial({ map: t, ...o });
 // 블록 종류 정의 (핫바)
@@ -106,6 +107,7 @@ const BLOCKS = [
   { id:'glow',   name:'발광석', mats:()=>new THREE.MeshLambertMaterial({ map:TEX.glow, emissive:0xffcc44, emissiveIntensity:0.9 }) },
   { id:'water',  name:'물',     mats:()=>LM(TEX.water,{transparent:true,opacity:0.72}) },
   { id:'lava',   name:'용암',   mats:()=>new THREE.MeshLambertMaterial({ map:TEX.lava, emissive:0xff5a0a, emissiveIntensity:0.7 }) },
+  { id:'slime',  name:'점프대', mats:()=>LM(TEX.slime,{transparent:true,opacity:0.9}) },
 ];
 const blockById = id => BLOCKS.find(b => b.id === id) || BLOCKS[1];
 
@@ -196,7 +198,7 @@ let selectedBlock = 'grass'; // 핫바 선택 블록
 function placeBlockMesh(x, y, z, type = 'dirt') {
   const k = `${x},${y},${z}`; if (blockMeshes[k]) return;
   const m = addBox(1, 1, 1, blockById(type).mats(), x, y + 0.5, z);
-  m.userData.isBlock = true; m.userData.bk = k;
+  m.userData.isBlock = true; m.userData.bk = k; m.userData.type = type;
   blockMeshes[k] = m;
 }
 function removeBlockMesh(x, y, z) {
@@ -652,6 +654,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'v' || e.key === 'V') toggleView();
   if (e.key === 'm' || e.key === 'M') { muted = !muted; toast(muted ? '🔇 효과음 끔' : '🔊 효과음 켬'); }
   if (e.key === 'f' || e.key === 'F') { flying = !flying; vy = 0; toast(flying ? '✈️ 날기 모드 (Space 상승 · Shift 하강)' : '🚶 걷기 모드'); }
+  if (e.key === 'n' || e.key === 'N') { dayT += Math.PI; toast('🕒 낮/밤 전환'); }
+  if (e.key === 'b' || e.key === 'B') toggleBGM();
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -785,6 +789,21 @@ function sfx(type) {
   else if (type === 'step')  { o.type='sine';     o.frequency.setValueAtTime(85,t);  g.gain.setValueAtTime(0.025,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.08); o.start(t); o.stop(t+0.09); }
 }
 
+// 배경음악 (생성형 앰비언트 패드, 기본 OFF, B로 토글)
+let bgmNodes = null;
+function toggleBGM() {
+  const ctx = audioListener.context; if (!ctx) return;
+  if (bgmNodes) { bgmNodes.forEach(n => { try { n.stop && n.stop(); } catch {} try { n.disconnect(); } catch {} }); bgmNodes = null; toast('🎵 배경음악 끔'); return; }
+  if (ctx.state === 'suspended') ctx.resume();
+  const g = ctx.createGain(); g.gain.value = 0.035; g.connect(ctx.destination);
+  const oscs = [130.81, 196.0, 261.63, 329.63].map((f, i) => {
+    const o = ctx.createOscillator(); o.type = i === 3 ? 'triangle' : 'sine'; o.frequency.value = f;
+    const og = ctx.createGain(); og.gain.value = i === 3 ? 0.35 : 1; o.connect(og); og.connect(g); o.start(); return o;
+  });
+  bgmNodes = [...oscs, g];
+  toast('🎵 배경음악 켬 (B로 끄기)');
+}
+
 // ── BREAK PARTICLES ───────────────────────────────────────────────────────
 const particles = [];
 function spawnBreak(x, y, z) {
@@ -811,6 +830,9 @@ function updateParticles(dt) {
 let dayT = 1.2;
 const SKY_DAY = new THREE.Color(0x87ceeb), SKY_NIGHT = new THREE.Color(0x0a1530);
 const _sky = new THREE.Color();
+const timeEl = document.createElement('span');
+timeEl.style.cssText = 'color:#9fd6ff;font-size:11px;margin-left:6px;';
+document.getElementById('topbar')?.appendChild(timeEl);
 function updateDayNight(dt) {
   dayT += dt * 0.025;
   const day = (Math.sin(dayT) + 1) / 2;           // 0 밤 ~ 1 낮
@@ -820,6 +842,8 @@ function updateDayNight(dt) {
   sun.intensity = 0.2 + day * 0.95;
   ambient.intensity = 0.32 + day * 0.4;
   sun.position.set(Math.cos(dayT) * 45, Math.max(6, Math.sin(dayT) * 45 + 8), 20);
+  const frac = (dayT / (Math.PI * 2)) % 1, h = (Math.floor(frac * 24) + 6) % 24, m = Math.floor((frac * 24 * 60) % 60);
+  timeEl.textContent = `${day > 0.5 ? '🌞' : '🌙'} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
 // ── RENDER LOOP ───────────────────────────────────────────────────────────
@@ -874,7 +898,12 @@ function animate(now) {
       if (onGround && keys[' ']) { vy = 7.2; onGround = false; sfx('jump'); }
       vy -= 23 * dt;
       player.g.position.y += vy * dt;
-      if (player.g.position.y <= gY) { player.g.position.y = gY; vy = 0; onGround = true; } else onGround = false;
+      if (player.g.position.y <= gY) {
+        player.g.position.y = gY;
+        const top = blockMeshes[`${Math.round(player.g.position.x)},${gY - 1},${Math.round(player.g.position.z)}`];
+        if (top && top.userData.type === 'slime' && vy < -2) { vy = 12.5; onGround = false; sfx('jump'); }  // 점프대 튕김
+        else { vy = 0; onGround = true; }
+      } else onGround = false;
       if (moving && onGround && frameN % 18 === 0) sfx('step');
     }
 

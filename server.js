@@ -61,16 +61,16 @@ io.on('connection', (socket) => {
   });
 
   // WebRTC - Camera
-  socket.on('webrtc_offer',  (d) => { if (d && d.target) socket.to(d.target).emit('webrtc_offer',  { source: socket.id, sdp: d.sdp }); });
+  socket.on('webrtc_offer', (d) => { if (d && d.target) socket.to(d.target).emit('webrtc_offer', { source: socket.id, sdp: d.sdp }); });
   socket.on('webrtc_answer', (d) => { if (d && d.target) socket.to(d.target).emit('webrtc_answer', { source: socket.id, sdp: d.sdp }); });
-  socket.on('webrtc_ice',    (d) => { if (d && d.target) socket.to(d.target).emit('webrtc_ice',    { source: socket.id, ice: d.ice }); });
+  socket.on('webrtc_ice', (d) => { if (d && d.target) socket.to(d.target).emit('webrtc_ice', { source: socket.id, ice: d.ice }); });
 
   // WebRTC - Screen Share
-  socket.on('screen_offer',  (d) => { if (d && d.target) socket.to(d.target).emit('screen_offer',  { source: socket.id, sdp: d.sdp }); });
+  socket.on('screen_offer', (d) => { if (d && d.target) socket.to(d.target).emit('screen_offer', { source: socket.id, sdp: d.sdp }); });
   socket.on('screen_answer', (d) => { if (d && d.target) socket.to(d.target).emit('screen_answer', { source: socket.id, sdp: d.sdp }); });
-  socket.on('screen_ice',    (d) => { if (d && d.target) socket.to(d.target).emit('screen_ice',    { source: socket.id, ice: d.ice }); });
+  socket.on('screen_ice', (d) => { if (d && d.target) socket.to(d.target).emit('screen_ice', { source: socket.id, ice: d.ice }); });
   socket.on('screen_share_start', () => io.emit('screen_share_start', socket.id));
-  socket.on('screen_share_stop',  () => io.emit('screen_share_stop',  socket.id));
+  socket.on('screen_share_stop', () => io.emit('screen_share_stop', socket.id));
 
   // Whiteboard
   socket.on('draw', (d) => { if (d) socket.broadcast.emit('draw', d); });
@@ -98,12 +98,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Heartbeat — 30초마다 로그 출력 (프로세스 유지)
-setInterval(() => {
-  const mem = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-  console.log(`[heartbeat] 접속자: ${Object.keys(players).length}명 | 메모리: ${mem}MB`);
-}, 30000);
 
 const PORT = process.env.PORT || 3050;
 server.listen(PORT, () => {
