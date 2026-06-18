@@ -93,6 +93,7 @@ const TEX = {
   lava: pixTex(cx => { noise(cx, '#e2540f', ['#ff7b1a','#c43a08']); cx.fillStyle='#ffd23a'; for(let i=0;i<4;i++)cx.fillRect(irnd(1,14),irnd(1,14),2,2); }),
   slime: pixTex(cx => { noise(cx, '#5fbf5a', ['#52ac4e','#74d66e']); cx.strokeStyle='#3e8c3a'; cx.lineWidth=1; cx.strokeRect(2,2,12,12); }),
   tnt: pixTex(cx => { cx.fillStyle='#c0392b'; cx.fillRect(0,0,16,16); cx.fillStyle='#ece4d4'; cx.fillRect(0,6,16,4); cx.fillStyle='#1a1a1a'; cx.font='bold 5px monospace'; cx.fillText('TNT',1,10); }),
+  portal: pixTex(cx => { noise(cx, '#7a2ec0', ['#9b4ae0','#5e1f9a']); cx.fillStyle='#c89bff'; for(let i=0;i<7;i++)cx.fillRect(irnd(2,14),irnd(2,14),2,2); }),
 };
 const LM = (t, o={}) => new THREE.MeshLambertMaterial({ map: t, ...o });
 // 블록 종류 정의 (핫바)
@@ -110,6 +111,7 @@ const BLOCKS = [
   { id:'lava',   name:'용암',   mats:()=>new THREE.MeshLambertMaterial({ map:TEX.lava, emissive:0xff5a0a, emissiveIntensity:0.7 }) },
   { id:'slime',  name:'점프대', mats:()=>LM(TEX.slime,{transparent:true,opacity:0.9}) },
   { id:'tnt',    name:'TNT',    mats:()=>LM(TEX.tnt) },
+  { id:'portal', name:'포탈',   mats:()=>new THREE.MeshLambertMaterial({ map:TEX.portal, emissive:0x7a2ec0, emissiveIntensity:0.6, transparent:true, opacity:0.85 }) },
 ];
 const blockById = id => BLOCKS.find(b => b.id === id) || BLOCKS[1];
 
@@ -169,7 +171,26 @@ function buildChicken(x, z) {
   g.position.set(x, 0, z); scene.add(g);
   return { g, hx: x, hz: z, phase: Math.random() * 6, t: Math.random() * 6 };
 }
-for (let i = 0; i < 6; i++) animals.push(buildChicken(-12 + Math.random()*24, -10 + Math.random()*20));
+function buildPig(x, z) {
+  const g = new THREE.Group(); const pink = new THREE.MeshLambertMaterial({ color: 0xeb9a9a });
+  const add = (w,h,d,m,px,py,pz) => { const p = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m); p.position.set(px,py,pz); g.add(p); return p; };
+  add(0.8, 0.6, 1.1, pink, 0, 0.6, 0);
+  add(0.55, 0.5, 0.45, pink, 0, 0.7, 0.62);
+  add(0.22, 0.16, 0.1, new THREE.MeshLambertMaterial({ color: 0xd98080 }), 0, 0.66, 0.85);
+  const legM = pink; [[-0.25,-0.35],[0.25,-0.35],[-0.25,0.35],[0.25,0.35]].forEach(([lx,lz]) => add(0.18,0.32,0.18, legM, lx, 0.16, lz));
+  g.position.set(x,0,z); scene.add(g); return { g, hx:x, hz:z, phase:Math.random()*6, t:Math.random()*6 };
+}
+function buildSheep(x, z) {
+  const g = new THREE.Group(); const wool = new THREE.MeshLambertMaterial({ color: 0xf2f2ee }); const skin = new THREE.MeshLambertMaterial({ color: 0xd8c0a8 });
+  const add = (w,h,d,m,px,py,pz) => { const p = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m); p.position.set(px,py,pz); g.add(p); return p; };
+  add(0.85, 0.8, 1.2, wool, 0, 0.8, 0);
+  add(0.4, 0.45, 0.4, skin, 0, 0.95, 0.7);
+  [[-0.28,-0.4],[0.28,-0.4],[-0.28,0.4],[0.28,0.4]].forEach(([lx,lz]) => add(0.18,0.4,0.18, skin, lx, 0.2, lz));
+  g.position.set(x,0,z); scene.add(g); return { g, hx:x, hz:z, phase:Math.random()*6, t:Math.random()*6 };
+}
+for (let i = 0; i < 4; i++) animals.push(buildChicken(-12 + Math.random()*24, -10 + Math.random()*20));
+for (let i = 0; i < 3; i++) animals.push(buildPig(-12 + Math.random()*24, -10 + Math.random()*20));
+for (let i = 0; i < 3; i++) animals.push(buildSheep(-12 + Math.random()*24, -10 + Math.random()*20));
 
 // ── 비(날씨) ───────────────────────────────────────────────────────────────
 let raining = false;
@@ -185,6 +206,14 @@ function toggleRain() { raining = !raining; rainGroup.visible = raining; toast(r
 const uwOverlay = document.createElement('div');
 uwOverlay.style.cssText = 'position:fixed;inset:0;background:rgba(40,110,200,0.32);pointer-events:none;z-index:8;display:none;';
 document.body.appendChild(uwOverlay);
+
+// ── 밤하늘 별 + 달 ─────────────────────────────────────────────────────────
+const starGeo = new THREE.BufferGeometry();
+{ const pos = []; for (let i = 0; i < 160; i++) { const r = 95, th = Math.random()*Math.PI*2, ph = Math.random()*Math.PI*0.5; pos.push(Math.cos(th)*Math.sin(ph)*r, Math.cos(ph)*r + 8, Math.sin(th)*Math.sin(ph)*r); } starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); }
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7, transparent: true, opacity: 0 });
+const stars = new THREE.Points(starGeo, starMat); scene.add(stars);
+const moon = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 12), new THREE.MeshBasicMaterial({ color: 0xf2f0d8 }));
+moon.visible = false; scene.add(moon);
 
 // ── AVATAR BUILDER ────────────────────────────────────────────────────────
 function hexColor(hex) { return new THREE.MeshLambertMaterial({ color: hex }); }
@@ -228,16 +257,19 @@ function buildAvatar(colorHex, name, isLocal = false) {
 
 // ── BLOCKS ────────────────────────────────────────────────────────────────
 const blockMeshes = {};
+const portals = new Set();
+let portalCd = 0;
 let selectedBlock = 'grass'; // 핫바 선택 블록
 function placeBlockMesh(x, y, z, type = 'dirt') {
   const k = `${x},${y},${z}`; if (blockMeshes[k]) return;
   const m = addBox(1, 1, 1, blockById(type).mats(), x, y + 0.5, z);
   m.userData.isBlock = true; m.userData.bk = k; m.userData.type = type;
   blockMeshes[k] = m;
+  if (type === 'portal') portals.add(k);
 }
 function removeBlockMesh(x, y, z) {
   const k = `${x},${y},${z}`;
-  if (blockMeshes[k]) { scene.remove(blockMeshes[k]); blockMeshes[k].geometry.dispose(); delete blockMeshes[k]; }
+  if (blockMeshes[k]) { scene.remove(blockMeshes[k]); blockMeshes[k].geometry.dispose(); delete blockMeshes[k]; portals.delete(k); }
 }
 
 const raycaster = new THREE.Raycaster();
@@ -693,6 +725,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'b' || e.key === 'B') toggleBGM();
   if (e.key === 'r' || e.key === 'R') toggleRain();
   if (e.key === 'y' || e.key === 'Y') firework();
+  if (e.key === 'h' || e.key === 'H') { if (player) { player.g.position.set(0, 0, 5); vy = 0; toast('🏠 스폰으로 복귀'); } }
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -893,6 +926,17 @@ function firework() {
   burst(player.g.position.x, player.g.position.y + 9, player.g.position.z, cols[Math.floor(Math.random()*cols.length)], 30, 5, 0.9);
   sfx('jump'); toast('🎆 펑!');
 }
+function teleportPortal(fromKey) {
+  for (const k of portals) {
+    if (k === fromKey) continue;
+    const c = k.split(',').map(Number);
+    player.g.position.set(c[0], c[1] + 1, c[2]); vy = 0;
+    portalCd = performance.now() + 1500;
+    burst(c[0], c[1] + 1.5, c[2], 0xc89bff, 20, 5, 0.6); sfx('jump'); toast('🌀 순간이동!');
+    return;
+  }
+  portalCd = performance.now() + 1500; toast('🌀 포탈은 2개 설치해야 이동돼요');
+}
 
 // ── DAY/NIGHT ─────────────────────────────────────────────────────────────
 let dayT = 1.2;
@@ -911,6 +955,9 @@ function updateDayNight(dt) {
   sun.intensity = (0.2 + day * 0.95) * (raining ? 0.55 : 1);
   ambient.intensity = (0.32 + day * 0.4) * (raining ? 0.75 : 1);
   sun.position.set(Math.cos(dayT) * 45, Math.max(6, Math.sin(dayT) * 45 + 8), 20);
+  starMat.opacity = Math.max(0, (0.5 - day) * 1.8);
+  moon.visible = day < 0.55;
+  moon.position.set(Math.cos(dayT + Math.PI) * 65, Math.sin(dayT + Math.PI) * 65 + 4, 28);
   const frac = (dayT / (Math.PI * 2)) % 1, h = (Math.floor(frac * 24) + 6) % 24, m = Math.floor((frac * 24 * 60) % 60);
   timeEl.textContent = `${day > 0.5 ? '🌞' : '🌙'} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
@@ -980,7 +1027,7 @@ function animate(now) {
         player.g.position.y = gY;
         const top = blockMeshes[`${Math.round(player.g.position.x)},${gY - 1},${Math.round(player.g.position.z)}`];
         if (top && top.userData.type === 'slime' && vy < -2) { vy = 12.5; onGround = false; sfx('jump'); }  // 점프대 튕김
-        else { vy = 0; onGround = true; }
+        else { vy = 0; onGround = true; if (top && top.userData.type === 'portal' && performance.now() > portalCd) teleportPortal(top.userData.bk); }
       } else onGround = false;
       if (moving && onGround && frameN % 18 === 0) sfx('step');
     }

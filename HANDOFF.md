@@ -63,6 +63,13 @@
 - [x] 폭발 카메라 흔들림(shake)
 - ⚠️ TNT는 설치한 클라이언트가 폭발 구동(중복 폭발 방지). 블록 제거는 서버 통해 전원 동기화.
 
+## 2026-06-18 마인크래프트화 라운드 7
+- [x] 밤하늘 별(Points) + 달(밤에 표시, 낮밤 연동)
+- [x] 동물 다양화: 닭4·돼지3·양3 로컬 배회
+- [x] 포탈 블록(2개 설치 → 밟으면 순간이동, 쿨다운 1.5s)
+- [x] 스폰 복귀(H키 → 0,0,5)
+- 블록 14종(…+포탈). 번호키 1~0=10종, 나머지는 핫바 클릭.
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)
