@@ -57,6 +57,12 @@
 - [x] 비(날씨) 토글(R) — 빗방울 180개 + 잿빛 하늘/조도 저하
 - [x] 수중 화면 효과 — 머리가 물 블록 안이면 파란 오버레이
 
+## 2026-06-18 마인크래프트화 라운드 6 (폭발·불꽃)
+- [x] TNT 블록 — 설치 시 2.5초 점화 후 반경2 폭발(블록 제거 break_block 동기화 + 주황 파티클 + 폭발음)
+- [x] 불꽃놀이(Y) — 머리 위 컬러 파티클 버스트
+- [x] 폭발 카메라 흔들림(shake)
+- ⚠️ TNT는 설치한 클라이언트가 폭발 구동(중복 폭발 방지). 블록 제거는 서버 통해 전원 동기화.
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)

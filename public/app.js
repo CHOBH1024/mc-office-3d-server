@@ -92,6 +92,7 @@ const TEX = {
   water: pixTex(cx => noise(cx, '#2a6fd4', ['#2360bd','#3a82e6','#1e55a8'])),
   lava: pixTex(cx => { noise(cx, '#e2540f', ['#ff7b1a','#c43a08']); cx.fillStyle='#ffd23a'; for(let i=0;i<4;i++)cx.fillRect(irnd(1,14),irnd(1,14),2,2); }),
   slime: pixTex(cx => { noise(cx, '#5fbf5a', ['#52ac4e','#74d66e']); cx.strokeStyle='#3e8c3a'; cx.lineWidth=1; cx.strokeRect(2,2,12,12); }),
+  tnt: pixTex(cx => { cx.fillStyle='#c0392b'; cx.fillRect(0,0,16,16); cx.fillStyle='#ece4d4'; cx.fillRect(0,6,16,4); cx.fillStyle='#1a1a1a'; cx.font='bold 5px monospace'; cx.fillText('TNT',1,10); }),
 };
 const LM = (t, o={}) => new THREE.MeshLambertMaterial({ map: t, ...o });
 // 블록 종류 정의 (핫바)
@@ -108,6 +109,7 @@ const BLOCKS = [
   { id:'water',  name:'물',     mats:()=>LM(TEX.water,{transparent:true,opacity:0.72}) },
   { id:'lava',   name:'용암',   mats:()=>new THREE.MeshLambertMaterial({ map:TEX.lava, emissive:0xff5a0a, emissiveIntensity:0.7 }) },
   { id:'slime',  name:'점프대', mats:()=>LM(TEX.slime,{transparent:true,opacity:0.9}) },
+  { id:'tnt',    name:'TNT',    mats:()=>LM(TEX.tnt) },
 ];
 const blockById = id => BLOCKS.find(b => b.id === id) || BLOCKS[1];
 
@@ -257,6 +259,7 @@ window.addEventListener('mousedown', e => {
   } else {
     const bx = Math.round(pt.x + n.x * .5), by = Math.floor(pt.y + n.y * .5), bz = Math.round(pt.z + n.z * .5);
     if (by >= 0 && socket) socket.emit('place_block', { x: bx, y: by, z: bz, type: selectedBlock });
+    if (by >= 0 && selectedBlock === 'tnt') startFuse(bx, by, bz);
   }
 });
 window.addEventListener('contextmenu', e => { if (player) e.preventDefault(); });
@@ -689,6 +692,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'n' || e.key === 'N') { dayT += Math.PI; toast('🕒 낮/밤 전환'); }
   if (e.key === 'b' || e.key === 'B') toggleBGM();
   if (e.key === 'r' || e.key === 'R') toggleRain();
+  if (e.key === 'y' || e.key === 'Y') firework();
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -820,6 +824,7 @@ function sfx(type) {
   else if (type === 'break') { o.type='sawtooth'; o.frequency.setValueAtTime(200,t); o.frequency.exponentialRampToValueAtTime(60,t+0.18); g.gain.setValueAtTime(0.08,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);  o.start(t); o.stop(t+0.21); }
   else if (type === 'jump')  { o.type='square';   o.frequency.setValueAtTime(330,t); o.frequency.exponentialRampToValueAtTime(560,t+0.12);g.gain.setValueAtTime(0.05,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.14); o.start(t); o.stop(t+0.15); }
   else if (type === 'step')  { o.type='sine';     o.frequency.setValueAtTime(85,t);  g.gain.setValueAtTime(0.025,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.08); o.start(t); o.stop(t+0.09); }
+  else if (type === 'boom')  { o.type='sawtooth'; o.frequency.setValueAtTime(120,t); o.frequency.exponentialRampToValueAtTime(28,t+0.4); g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.45); o.start(t); o.stop(t+0.46); }
 }
 
 // 배경음악 (생성형 앰비언트 패드, 기본 OFF, B로 토글)
@@ -857,6 +862,36 @@ function updateParticles(dt) {
     p.position.addScaledVector(p.userData.v, dt);
     p.scale.setScalar(Math.max(0.05, p.userData.life / 0.6));
   }
+}
+
+// ── 폭발 / 불꽃 / 카메라 흔들림 ────────────────────────────────────────────
+let shakeAmt = 0;
+function shake(a) { shakeAmt = Math.max(shakeAmt, a); }
+function burst(x, y, z, color, n, spd, life) {
+  for (let i = 0; i < n; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), new THREE.MeshBasicMaterial({ color }));
+    p.position.set(x, y, z);
+    p.userData.v = new THREE.Vector3((Math.random()-0.5), (Math.random()-0.5), (Math.random()-0.5)).normalize().multiplyScalar(spd * (0.5 + Math.random()));
+    p.userData.life = life; scene.add(p); particles.push(p);
+  }
+}
+function explodeTNT(x, y, z) {
+  sfx('boom'); shake(0.6);
+  burst(x, y + 0.5, z, 0xff7a1a, 26, 6, 0.55);
+  burst(x, y + 0.5, z, 0x553322, 14, 4, 0.6);
+  const R = 2;
+  for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) for (let dz = -R; dz <= R; dz++) {
+    if (dx*dx + dy*dy + dz*dz > R*R + 1) continue;
+    const k = `${x+dx},${y+dy},${z+dz}`;
+    if (blockMeshes[k] && socket) socket.emit('break_block', { x: x+dx, y: y+dy, z: z+dz });
+  }
+}
+function startFuse(x, y, z) { toast('💥 TNT 점화! (2.5초)'); setTimeout(() => explodeTNT(x, y, z), 2500); }
+function firework() {
+  if (!player) return;
+  const cols = [0xff5555, 0x55ff88, 0x5599ff, 0xffdd44, 0xff66cc];
+  burst(player.g.position.x, player.g.position.y + 9, player.g.position.z, cols[Math.floor(Math.random()*cols.length)], 30, 5, 0.9);
+  sfx('jump'); toast('🎆 펑!');
 }
 
 // ── DAY/NIGHT ─────────────────────────────────────────────────────────────
@@ -967,6 +1002,9 @@ function animate(now) {
     // 달리기 시 시야각(FOV) 살짝 넓힘 (질주감)
     const targetFov = (moving && sprint) ? 64 : 55;
     if (Math.abs(camera.fov - targetFov) > 0.1) { camera.fov += (targetFov - camera.fov) * 0.12; camera.updateProjectionMatrix(); }
+
+    // 폭발 카메라 흔들림
+    if (shakeAmt > 0.001) { camera.position.x += (Math.random()-0.5)*shakeAmt; camera.position.y += (Math.random()-0.5)*shakeAmt; camera.position.z += (Math.random()-0.5)*shakeAmt; shakeAmt *= 0.88; }
 
     document.getElementById('cx').textContent = Math.round(player.g.position.x);
     document.getElementById('cy').textContent = Math.round(player.g.position.y);
