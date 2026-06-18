@@ -41,6 +41,8 @@ function toast(msg) {
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x1a2b3c, 15, 80);
 const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+const audioListener = new THREE.AudioListener();
+camera.add(audioListener);
 const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -230,19 +232,34 @@ function updateUCnt() {
 }
 
 // ── CONTROLS: MIC / CAM / SHARE / BOARD ───────────────────────────────────
-document.getElementById('btn-mic')?.addEventListener('click', () => {
-  if (!localStream) return toast('먼저 카메라를 켜주세요.');
-  const t = localStream.getAudioTracks()[0]; if (!t) return;
-  t.enabled = !t.enabled;
+document.getElementById('btn-mic')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-mic');
+  if (audioListener.context.state === 'suspended') audioListener.context.resume();
+  // 카메라 없이도 마이크 단독 활성화
+  if (!localStream) {
+    try { localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { return toast('마이크 권한을 허용해주세요.'); }
+    Object.keys(remotePlayers).forEach(id => startCamCall(id));
+    const at = localStream.getAudioTracks()[0]; if (at) at.enabled = true;
+    btn.textContent = '🎤 ON'; btn.classList.add('on');
+    toast('마이크 ON');
+    return;
+  }
+  const t = localStream.getAudioTracks()[0];
+  if (!t) return toast('마이크를 찾을 수 없어요.');
+  t.enabled = !t.enabled;
   btn.textContent = t.enabled ? '🎤 ON' : '🎤 마이크';
   btn.classList.toggle('on', t.enabled);
 });
 
 document.getElementById('btn-cam')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-cam');
+  const micBtn = document.getElementById('btn-mic');
   if (!camOn) {
+    if (audioListener.context.state === 'suspended') audioListener.context.resume();
     try {
+      // 기존(마이크 단독) 스트림이 있으면 정리 후 영상+음성 새로 확보
+      if (localStream) { localStream.getTracks().forEach(t => t.stop()); Object.values(camPeers).forEach(p => p.close()); camPeers = {}; }
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       const vid = Object.assign(document.createElement('video'), { autoplay: true, muted: true });
       vid.srcObject = localStream;
@@ -252,6 +269,8 @@ document.getElementById('btn-cam')?.addEventListener('click', async () => {
         if (player) player.facePlane.material = new THREE.MeshBasicMaterial({ map: tex });
       };
       camOn = true; btn.textContent = '📷 ON'; btn.classList.add('on');
+      // 마이크도 함께 켜진 상태로 버튼 동기화
+      if (micBtn) { micBtn.textContent = '🎤 ON'; micBtn.classList.add('on'); }
       toast('카메라 연결됨');
       Object.keys(remotePlayers).forEach(id => startCamCall(id));
     } catch { toast('카메라 권한을 허용해주세요.'); }
@@ -259,6 +278,7 @@ document.getElementById('btn-cam')?.addEventListener('click', async () => {
     localStream.getTracks().forEach(t => t.stop()); localStream = null;
     if (player) player.facePlane.material = new THREE.MeshBasicMaterial({ color: 0xffd080 });
     camOn = false; btn.textContent = '📷 카메라'; btn.classList.remove('on');
+    if (micBtn) { micBtn.textContent = '🎤 마이크'; micBtn.classList.remove('on'); }
     Object.values(camPeers).forEach(p => p.close()); camPeers = {};
     toast('카메라 OFF');
   }
@@ -336,10 +356,11 @@ document.getElementById('btn-exit')?.addEventListener('click', () => {
   Object.values(camPeers).forEach(p => p.close()); camPeers = {};
   Object.values(screenPeers).forEach(p => p.close()); screenPeers = {};
   if (player) { scene.remove(player.g); player.tag.remove(); player = null; }
-  Object.values(remotePlayers).forEach(r => { scene.remove(r.g); r.tag.remove(); if (r.bubble) r.bubble.remove(); });
+  Object.values(remotePlayers).forEach(r => { scene.remove(r.g); r.tag.remove(); if (r.bubble) r.bubble.remove(); if (r.vid) r.vid.remove(); if (r.audioEl) r.audioEl.remove(); });
   remotePlayers = {};
   document.getElementById('hud').style.display = 'none';
   document.getElementById('xhair').style.display = 'none';
+  if (window._joystick) window._joystick.style.display = 'none';
   document.getElementById('login-ui').style.display = 'block';
   document.getElementById('screen-share-ui').style.display = 'none';
   document.getElementById('board-ui').style.display = 'none';
@@ -361,6 +382,7 @@ function startSession() {
   document.getElementById('login-ui').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
   document.getElementById('xhair').style.display = 'block';
+  if (window._joystick) window._joystick.style.display = 'block';
   document.getElementById('net-dot').className = 'dot off';
 
   player = buildAvatar(myColor, name, true);
@@ -383,7 +405,14 @@ function startSession() {
     Object.values(players).forEach(p => { if (p.id !== socket.id) addRemote(p); });
     updateUCnt(); updateVPanel();
   });
-  socket.on('player_joined', p => { addRemote(p); updateUCnt(); updateVPanel(); toast(`${p.name} 입장`); });
+  socket.on('player_joined', p => {
+    addRemote(p); updateUCnt(); updateVPanel(); toast(`${p.name} 입장`);
+    // 내가 이미 켜둔 카메라/마이크·화면공유를 새 입장자에게도 전송 (late-joiner 동기화)
+    setTimeout(() => {
+      if (localStream && remotePlayers[p.id]) startCamCall(p.id);
+      if (screenStream && remotePlayers[p.id]) startScreenCall(p.id);
+    }, 700);
+  });
   socket.on('player_moved', d => {
     const r = remotePlayers[d.id];
     if (r) { r.tx = d.x; r.tz = d.z; r.trY = d.ry; }
@@ -391,6 +420,7 @@ function startSession() {
   socket.on('player_left', id => {
     const r = remotePlayers[id]; if (!r) return;
     scene.remove(r.g); r.tag.remove(); if (r.bubble) r.bubble.remove();
+    if (r.vid) r.vid.remove(); if (r.audioEl) r.audioEl.remove();
     toast(`${r.name} 퇴장`); delete remotePlayers[id];
     if (camPeers[id]) { camPeers[id].close(); delete camPeers[id]; }
     if (screenPeers[id]) { screenPeers[id].close(); delete screenPeers[id]; }
@@ -446,19 +476,33 @@ function addRemote(p) {
 
 // ── WEBRTC HELPERS ────────────────────────────────────────────────────────
 function createCamPeer(id) {
+  if (camPeers[id]) { try { camPeers[id].close(); } catch {} } // 재협상 시 기존 피어 정리(누수 방지)
   const pc = new RTCPeerConnection(rtcConfig); camPeers[id] = pc;
   if (localStream) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
   pc.onicecandidate = e => { if (e.candidate && socket) socket.emit('webrtc_ice', { target: id, ice: e.candidate }); };
   pc.ontrack = e => {
     const r = remotePlayers[id]; if (!r) return;
     if (e.track.kind === 'video' && !r.vid) {
-      const v = Object.assign(document.createElement('video'), { autoplay: true, playsInline: true });
-      v.srcObject = e.streams[0]; v.style.cssText = 'position:absolute;opacity:0;width:1px;height:1px;';
+      const v = Object.assign(document.createElement('video'), { autoplay: true, playsInline: true, muted: true });
+      v.srcObject = e.streams[0]; v.style.cssText = 'position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;';
       document.body.appendChild(v); r.vid = v;
       v.onloadedmetadata = () => {
         const tex = new THREE.VideoTexture(v); tex.minFilter = THREE.LinearFilter;
         r.facePlane.material = new THREE.MeshBasicMaterial({ map: tex });
       };
+    }
+    if (e.track.kind === 'audio' && !r.hasAudio) {
+      r.hasAudio = true;
+      try {
+        const pAudio = new THREE.PositionalAudio(audioListener);
+        const src = audioListener.context.createMediaStreamSource(e.streams[0]);
+        pAudio.setNodeSource(src);
+        pAudio.setRefDistance(4); pAudio.setMaxDistance(22); pAudio.setRolloffFactor(2);
+        r.g.add(pAudio); r.audio = pAudio;
+        // Chrome 워크어라운드: MediaStream 오디오를 <audio>에도 연결해야 Web Audio 파이프라인 활성화
+        const a = Object.assign(document.createElement('audio'), { autoplay: true, muted: true });
+        a.srcObject = e.streams[0]; a.style.display = 'none'; document.body.appendChild(a); r.audioEl = a;
+      } catch { /* 공간 음향 실패 시 무시 */ }
     }
   };
   return pc;
@@ -511,6 +555,32 @@ function drawMinimap() {
 const keys = {};
 document.addEventListener('keydown', e => { if (e.target.tagName !== 'INPUT') { keys[e.key] = true; if (e.key === 't' || e.key === 'T') { e.preventDefault(); chatIn?.focus(); } } });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ── MOBILE JOYSTICK (터치 기기 전용) ──────────────────────────────────────
+(function initJoystick() {
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (!isTouch) return;
+  const base = document.createElement('div');
+  base.style.cssText = 'position:fixed;left:18px;bottom:100px;width:108px;height:108px;border-radius:50%;background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.25);z-index:30;touch-action:none;display:none;';
+  const knob = document.createElement('div');
+  knob.style.cssText = 'position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.55);transform:translate(-50%,-50%);';
+  base.appendChild(knob); document.body.appendChild(base);
+  window._joystick = base; // startSession/exit에서 표시 토글
+  let active = false, cx = 0, cy = 0;
+  const setDir = (nx, nz) => { keys['w'] = nz < -0.3; keys['s'] = nz > 0.3; keys['a'] = nx < -0.3; keys['d'] = nx > 0.3; };
+  const clearDir = () => { keys['w'] = keys['a'] = keys['s'] = keys['d'] = false; };
+  base.addEventListener('touchstart', e => { active = true; const r = base.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; e.preventDefault(); }, { passive: false });
+  base.addEventListener('touchmove', e => {
+    if (!active) return; const t = e.touches[0];
+    const dx = t.clientX - cx, dy = t.clientY - cy, d = Math.hypot(dx, dy) || 1, cl = Math.min(d, 40);
+    const nx = dx / d, ny = dy / d;
+    knob.style.left = (50 + (nx * cl) / 108 * 100) + '%';
+    knob.style.top = (50 + (ny * cl) / 108 * 100) + '%';
+    setDir(nx, ny); e.preventDefault();
+  }, { passive: false });
+  const end = () => { active = false; clearDir(); knob.style.left = '50%'; knob.style.top = '50%'; };
+  base.addEventListener('touchend', end); base.addEventListener('touchcancel', end);
+})();
 
 // ── RENDER LOOP ───────────────────────────────────────────────────────────
 let lastT = performance.now(), frameN = 0;
