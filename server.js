@@ -99,6 +99,12 @@ io.on('connection', (socket) => {
   });
 });
 
+// Heartbeat — 30초마다 로그 출력 (프로세스 유지)
+setInterval(() => {
+  const mem = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+  console.log(`[heartbeat] 접속자: ${Object.keys(players).length}명 | 메모리: ${mem}MB`);
+}, 30000);
+
 const PORT = process.env.PORT || 3050;
 server.listen(PORT, () => {
   console.log(`서버 실행 중: http://localhost:${PORT}`);
