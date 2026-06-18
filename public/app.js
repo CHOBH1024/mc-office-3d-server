@@ -89,6 +89,8 @@ const TEX = {
   leaves: pixTex(cx => noise(cx, '#3e7a34', ['#356a2c','#4a8c3e','#2e5e26'])),
   sand: pixTex(cx => noise(cx, '#dcd29a', ['#cfc488','#e8dca8'])),
   glow: pixTex(cx => { noise(cx, '#e8c84a', ['#f0d860','#d4a82e']); cx.fillStyle='#fff0a0'; for(let i=0;i<5;i++)cx.fillRect(irnd(2,14),irnd(2,14),2,2); }),
+  water: pixTex(cx => noise(cx, '#2a6fd4', ['#2360bd','#3a82e6','#1e55a8'])),
+  lava: pixTex(cx => { noise(cx, '#e2540f', ['#ff7b1a','#c43a08']); cx.fillStyle='#ffd23a'; for(let i=0;i<4;i++)cx.fillRect(irnd(1,14),irnd(1,14),2,2); }),
 };
 const LM = (t, o={}) => new THREE.MeshLambertMaterial({ map: t, ...o });
 // 블록 종류 정의 (핫바)
@@ -102,6 +104,8 @@ const BLOCKS = [
   { id:'brick',  name:'벽돌',   mats:()=>LM(TEX.brick) },
   { id:'glass',  name:'유리',   mats:()=>LM(TEX.glass,{transparent:true,opacity:0.65}) },
   { id:'glow',   name:'발광석', mats:()=>new THREE.MeshLambertMaterial({ map:TEX.glow, emissive:0xffcc44, emissiveIntensity:0.9 }) },
+  { id:'water',  name:'물',     mats:()=>LM(TEX.water,{transparent:true,opacity:0.72}) },
+  { id:'lava',   name:'용암',   mats:()=>new THREE.MeshLambertMaterial({ map:TEX.lava, emissive:0xff5a0a, emissiveIntensity:0.7 }) },
 ];
 const blockById = id => BLOCKS.find(b => b.id === id) || BLOCKS[1];
 
@@ -138,6 +142,13 @@ function tree(x, z) {
 [[-16,8],[16,8],[-16,-2],[16,-2],[0,12]].forEach(([x,z]) => tree(x,z));
 // 작은 잔디 언덕 (점프해서 올라가 보세요)
 [[13,10,1],[14,10,1],[13,11,1],[14,11,2],[13,11,2]].forEach(([x,z,hh]) => { for(let h=0;h<hh;h++) addBox(1,1,1, h===hh-1?[LM(TEX.grassSide),LM(TEX.grassSide),LM(TEX.grassTop),LM(TEX.dirt),LM(TEX.grassSide),LM(TEX.grassSide)]:LM(TEX.dirt), x, h+0.5, z); });
+// 떠다니는 구름
+const clouds = [];
+for (let i = 0; i < 14; i++) {
+  const cl = new THREE.Mesh(new THREE.BoxGeometry(5 + Math.random()*8, 1.3, 4 + Math.random()*6), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }));
+  cl.position.set(-60 + Math.random()*120, 28 + Math.random()*10, -60 + Math.random()*120);
+  scene.add(cl); clouds.push(cl);
+}
 
 // ── AVATAR BUILDER ────────────────────────────────────────────────────────
 function hexColor(hex) { return new THREE.MeshLambertMaterial({ color: hex }); }
@@ -417,7 +428,8 @@ document.getElementById('btn-exit')?.addEventListener('click', () => {
   document.getElementById('xhair').style.display = 'none';
   if (window._joystick) window._joystick.style.display = 'none';
   if (window._blockbar) window._blockbar.style.display = 'none';
-  firstPerson = false; document.exitPointerLock?.();
+  if (window._emotebar) window._emotebar.style.display = 'none';
+  firstPerson = false; flying = false; document.exitPointerLock?.();
   document.getElementById('login-ui').style.display = 'block';
   document.getElementById('screen-share-ui').style.display = 'none';
   document.getElementById('board-ui').style.display = 'none';
@@ -441,6 +453,7 @@ function startSession() {
   document.getElementById('xhair').style.display = 'block';
   if (window._joystick) window._joystick.style.display = 'block';
   if (window._blockbar) window._blockbar.style.display = 'flex';
+  if (window._emotebar) window._emotebar.style.display = 'flex';
   document.getElementById('net-dot').className = 'dot off';
 
   player = buildAvatar(myColor, name, true);
@@ -600,6 +613,13 @@ function drawMinimap() {
   const mm = document.getElementById('mm'); if (!mm || !player) return;
   const ctx = mm.getContext('2d'), cx = 74, cy = 74, scale = 3;
   ctx.clearRect(0, 0, 148, 148);
+  // 설치된 블록 (갈색 점)
+  ctx.fillStyle = '#9a6a3a';
+  for (const k in blockMeshes) {
+    const c = k.split(',');
+    const dx = (+c[0] - player.g.position.x) * scale, dz = (+c[2] - player.g.position.z) * scale;
+    if (Math.abs(dx) < 72 && Math.abs(dz) < 72) ctx.fillRect(cx + dx - 1, cy + dz - 1, 2, 2);
+  }
   ctx.fillStyle = '#55ff55'; ctx.fillRect(cx - 2, cy - 2, 4, 4);
   Object.values(remotePlayers).forEach(r => {
     const dx = (r.g.position.x - player.g.position.x) * scale;
@@ -611,7 +631,7 @@ function drawMinimap() {
 
 // ── INPUT ─────────────────────────────────────────────────────────────────
 const keys = {};
-let firstPerson = false, yaw = 0, pitch = 0;
+let firstPerson = false, yaw = 0, pitch = 0, flying = false;
 
 function toggleView() {
   if (!player) return;
@@ -628,8 +648,10 @@ document.addEventListener('keydown', e => {
   if (e.key === 't' || e.key === 'T') { e.preventDefault(); chatIn?.focus(); }
   if (e.key === ' ') e.preventDefault();                       // 점프 (스크롤 방지)
   if (e.key >= '1' && e.key <= '9') { const b = BLOCKS[+e.key - 1]; if (b) selectBlock(b.id); }
+  if (e.key === '0') { const b = BLOCKS[9]; if (b) selectBlock(b.id); }
   if (e.key === 'v' || e.key === 'V') toggleView();
   if (e.key === 'm' || e.key === 'M') { muted = !muted; toast(muted ? '🔇 효과음 끔' : '🔊 효과음 켬'); }
+  if (e.key === 'f' || e.key === 'F') { flying = !flying; vy = 0; toast(flying ? '✈️ 날기 모드 (Space 상승 · Shift 하강)' : '🚶 걷기 모드'); }
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
@@ -702,6 +724,23 @@ function selectBlock(id) {
   document.body.appendChild(bar);
   window._blockbar = bar;
   selectBlock(selectedBlock);
+})();
+
+// ── EMOTE BAR (머리 위 반응 — 채팅 버블 재활용) ──────────────────────────
+(function buildEmoteBar() {
+  const bar = document.createElement('div');
+  bar.id = 'emotebar';
+  bar.style.cssText = 'position:fixed;right:10px;bottom:120px;display:none;gap:4px;z-index:20;';
+  ['👍','❤️','😂','🎉','👋','🤔'].forEach(em => {
+    const b = document.createElement('button');
+    b.textContent = em;
+    b.style.cssText = 'width:36px;height:36px;font-size:17px;background:rgba(0,0,0,.62);border:2px solid #555;cursor:pointer;';
+    b.onmousedown = e => e.stopPropagation();
+    b.onclick = () => { if (socket) socket.emit('chat', { msg: em }); };
+    bar.appendChild(b);
+  });
+  document.body.appendChild(bar);
+  window._emotebar = bar;
 })();
 
 // ── PHYSICS / TARGET HELPERS ──────────────────────────────────────────────
@@ -791,6 +830,7 @@ function animate(now) {
 
   updateDayNight(dt);
   updateParticles(dt);
+  for (const c of clouds) { c.position.x += dt * 1.2; if (c.position.x > 72) c.position.x = -72; }
 
   if (player) {
     const sprint = !!keys['Shift'];
@@ -823,13 +863,20 @@ function animate(now) {
       player.LA.rotation.x *= 0.8; player.RA.rotation.x *= 0.8; player.LL.rotation.x *= 0.8; player.RL.rotation.x *= 0.8;
     }
 
-    // 점프 + 중력 + 블록 위 착지 (쌓고 올라가기)
+    // 점프/중력/착지 — 또는 날기(크리에이티브)
     const gY = groundHeightAt(player.g.position.x, player.g.position.z);
-    if (onGround && keys[' ']) { vy = 7.2; onGround = false; sfx('jump'); }
-    vy -= 23 * dt;
-    player.g.position.y += vy * dt;
-    if (player.g.position.y <= gY) { player.g.position.y = gY; vy = 0; onGround = true; } else onGround = false;
-    if (moving && onGround && frameN % 18 === 0) sfx('step');
+    if (flying) {
+      if (keys[' ']) player.g.position.y += 7 * dt;
+      if (keys['Shift']) player.g.position.y -= 7 * dt;
+      if (player.g.position.y < gY) player.g.position.y = gY;
+      vy = 0; onGround = false;
+    } else {
+      if (onGround && keys[' ']) { vy = 7.2; onGround = false; sfx('jump'); }
+      vy -= 23 * dt;
+      player.g.position.y += vy * dt;
+      if (player.g.position.y <= gY) { player.g.position.y = gY; vy = 0; onGround = true; } else onGround = false;
+      if (moving && onGround && frameN % 18 === 0) sfx('step');
+    }
 
     if (socket && frameN % 3 === 0) socket.emit('move', { x: player.g.position.x, y: player.g.position.y, z: player.g.position.z, ry: player.g.rotation.y });
 

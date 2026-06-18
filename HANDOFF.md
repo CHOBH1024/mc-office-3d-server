@@ -40,6 +40,13 @@
 - [x] 블록 파괴 파티클(블록 텍스처 조각 튐 + 중력 + 페이드)
 - [x] 달리기 시 FOV 살짝 넓힘(질주감)
 
+## 2026-06-18 마인크래프트화 라운드 3 (월드·소셜·크리에이티브)
+- [x] 이모트 바(👍❤️😂🎉👋🤔 → 머리 위 버블, 채팅 이벤트 재활용, 서버 변경無)
+- [x] 떠다니는 구름 14개
+- [x] 물·용암 블록 추가(핫바 11종, 1~9 + 0키 / 용암은 클릭). 물=반투명, 용암=emissive
+- [x] 크리에이티브 날기 모드(F) — Space 상승·Shift 하강, 중력 무시
+- [x] 미니맵에 설치된 블록(갈색 점) 표시
+
 ## 배포 메모
 - Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
 - vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)
