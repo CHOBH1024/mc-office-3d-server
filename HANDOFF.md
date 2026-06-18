@@ -15,12 +15,28 @@
 - `public/index.html` + `style.css` + `app.js` — 예쁜 Minecraft 테마 + 진짜 멀티(같은 출처 `io(window.location.origin)`).
 - 배포: GitHub push → Render(render.yaml, npm start) 자동.
 
-## Claude 인수 후 작업 (2026-06-18)
-- [ ] 🎤 마이크 단독 활성화 (카메라 없이도)
-- [ ] 🔊 원격 음성 공간 음향(PositionalAudio, 거리별 볼륨)
-- [ ] 🐢 late-joiner 동기화 (내가 cam/share 켠 뒤 들어온 사람에게도 전송)
-- [ ] 📱 모바일 터치 조이스틱
-- [ ] vercel(mc-office-3d) → onrender 리다이렉트
+## Claude 인수 후 작업 (2026-06-18) — 전부 완료·배포됨
+- [x] 🎤 마이크 단독 활성화 (카메라 없이도)
+- [x] 🔊 원격 음성 공간 음향(PositionalAudio, 거리별 볼륨)
+- [x] 🐢 late-joiner 동기화 (내가 cam/share 켠 뒤 들어온 사람에게도 전송)
+- [x] 📱 모바일 터치 조이스틱
+- [x] vercel(mc-office-3d) → onrender 리다이렉트 (mc-office-deploy/index.html, deploy-mc-office.js sourceDir 변경)
+- [x] GitHub push → Render 재배포 검증(PositionalAudio 서빙 확인), vercel 리다이렉트 검증
+
+## 2026-06-18 마인크래프트화 라운드 (기능·조작·게임성 강화)
+- [x] 픽셀 텍스처(잔디/흙/돌/조약돌/판자/통나무/벽돌/유리/잎/모래) — 단색 → 진짜 마크 텍스처
+- [x] 월드 재구성: 잔디 평야 + 조약돌 외벽(타일 큰박스, 성능) + 나무 5그루 + 잔디 언덕
+- [x] 블록 핫바 8종(1~8키/클릭 선택, 텍스처 미리보기), 선택 블록으로 설치(서버 type 동기화)
+- [x] 점프(Space)+중력+블록 위 착지(쌓고 올라가기), 달리기(Shift)
+- [x] 1인칭 전환(V/🔭버튼, 포인터락 마우스 시점, ESC 해제) ↔ 3인칭, 시점기준 이동
+- [x] 조준 블록 하이라이트(테두리), 도달거리 9 제한
+- [x] 원격 플레이어 Y(점프) 동기화
+- ⚠️ 1인칭은 포인터락 지원(PC)에서만. 모바일은 조이스틱+3인칭.
+
+## 배포 메모
+- Render 새 코드 반영: `git push origin master` → render.yaml autoDeploy. 검증: `curl .../app.js | grep PositionalAudio`
+- vercel 리다이렉트 재배포: `node scratch/deploy-mc-office.js` (sourceDir=mc-office-deploy)
+- ⚠️ deploy-mc-office.js·deploy-sinang-inside.js 등에 Vercel 토큰이 평문 — 저장소 커밋 금지(scratch 로컬 전용)
 
 ## 주의
 - localStream은 단일 스트림. cam↔mic 상호작용 시 피어 누수 주의(createCamPeer에서 기존 피어 close).
