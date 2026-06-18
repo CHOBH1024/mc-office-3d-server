@@ -157,7 +157,7 @@ const ldInterval = setInterval(() => {
   pLoad += Math.random()*20;
   if(pLoad>100) pLoad=100;
   document.getElementById('ld-fill').style.width = pLoad+'%';
-  if(pLoad===100) {
+  if(pLoad>=100) {
     clearInterval(ldInterval);
     setTimeout(() => {
       document.getElementById('loading').style.opacity = '0';
